@@ -1,10 +1,2 @@
 target/
 .env
-*.xlsx
-*.kml
-
-# pkgbuild files
-pkgbuild/homebrew/homebrew-metsavaluaatio
-pkgbuild/arch/*/
-pkgbuild/arch/*.pkg.tar.*
-pkgbuild/arch/*.tar.gz
