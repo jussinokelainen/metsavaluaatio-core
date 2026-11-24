@@ -154,7 +154,7 @@ fn new_placemark_start(name: String) -> String {
 ///
 /// # Examples
 /// ```
-/// # use::metsaval::maps::xml_escape;
+/// # use::metsaval_core::maps::xml_escape;
 /// let s = "& < > \" '";
 /// assert_eq!(xml_escape(s), "&amp; &lt; &gt; &quot; &apos;")
 /// ```

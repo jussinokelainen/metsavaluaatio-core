@@ -1,6 +1,6 @@
 [package]
-name = "metsaval"
-version = "1.0.0"
+name = "metsaval-core"
+version = "1.0.1"
 edition = "2024"
 
 [dependencies]
