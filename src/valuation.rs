@@ -190,7 +190,12 @@ pub fn calculate_costs(
 ) -> f64 {
     if let Some(a) = area {
         match cutting {
-            Some(Cutting::Ensiharvennus) => 0.0,
+            Some(Cutting::Ensiharvennus) => {
+                let volume = a * pulpwood * 0.35 + a * sawlog * 0.05;
+                let mut cost = volume * COST_RATES.palvelumaksu;
+                cost += a * COST_RATES.ennakkoraivaus_harvennus;
+                cost
+            }
             Some(Cutting::Harvennus) => {
                 let volume = a * pulpwood * 0.3 + a * sawlog * 0.1;
                 let mut cost = volume * COST_RATES.palvelumaksu;
@@ -240,6 +245,16 @@ fn harvennus(species: Species, sawlog: f64, pulpwood: f64, area: f64) -> f64 {
         area * sawlog * 0.1 * PRICES.get(species, TimberType::Tukki, Cutting::Harvennus);
     let pulp_value =
         area * pulpwood * 0.3 * PRICES.get(species, TimberType::Kuitu, Cutting::Harvennus);
+    sawlog_value + pulp_value
+}
+
+fn ensiharvennus(species: Species, sawlog: f64, pulpwood: f64, area: f64) -> f64 {
+    let sawlog_value =
+        area * sawlog * 0.05 * PRICES.get(species, TimberType::Tukki, Cutting::Ensiharvennus);
+
+    let pulp_value =
+        area * pulpwood * 0.35 * PRICES.get(species, TimberType::Kuitu, Cutting::Ensiharvennus);
+
     sawlog_value + pulp_value
 }
 
@@ -342,7 +357,7 @@ pub fn calculate_value(row: &SpeciesSummary) -> f64 {
     let area = row.area.unwrap_or(0.0);
 
     match cutting {
-        Some(Cutting::Ensiharvennus) => return 0.0,
+        Some(Cutting::Ensiharvennus) => return ensiharvennus(species, sawlog, pulpwood, area),
         Some(Cutting::Harvennus) => return harvennus(species, sawlog, pulpwood, area),
         Some(Cutting::Uudistus) => return uudistus(species, sawlog, pulpwood, area),
         None => {}
@@ -751,7 +766,7 @@ mod tests {
     }
 
     #[test]
-    fn ensiharvennus_is_always_worthless() {
+    fn ensiharvennus_value_is_correct() {
         let summary = SpeciesSummary {
             cutting: Some(Cutting::Ensiharvennus),
             volume: 100.0,
@@ -759,7 +774,7 @@ mod tests {
             pulpwoodvolume: 50.0,
             ..row()
         };
-        assert_eq!(calculate_value(&summary), 0.0);
+        assert_eq!(calculate_value(&summary), 505.475);
     }
 
     #[test]
@@ -886,9 +901,9 @@ mod tests {
     }
 
     #[test]
-    fn costs_ensiharvennus_gives_always_zero() {
+    fn costs_ensiharvennus_gives_correct_value() {
         let res = calculate_costs(Some(1.0), 16.0, 10.0, Some(Cutting::Ensiharvennus));
-        assert_eq!(res, 0.0)
+        assert_eq!(res, 398.15)
     }
 
     #[test]
