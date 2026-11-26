@@ -181,6 +181,28 @@ pub fn build_species_summary(
 // Kuviokohtaiset Kulut
 // ---------------------------------------------------------------------------
 
+fn ensiharvennus_cost(a: f64, pulpwood: f64, sawlog: f64) -> f64 {
+    let volume = a * pulpwood * 0.35 + a * sawlog * 0.05;
+    let mut cost = volume * COST_RATES.palvelumaksu;
+    cost += a * COST_RATES.ennakkoraivaus_harvennus;
+    cost
+}
+
+fn harvennus_cost(a: f64, pulpwood: f64, sawlog: f64) -> f64 {
+    let volume = a * pulpwood * 0.3 + a * sawlog * 0.1;
+    let mut cost = volume * COST_RATES.palvelumaksu;
+    cost += a * COST_RATES.ennakkoraivaus_harvennus;
+    cost
+}
+
+fn uudistus_cost(a: f64, pulpwood: f64, sawlog: f64) -> f64 {
+    let volume = a * pulpwood * 0.75 + a * sawlog * 0.75;
+    let mut cost = volume * COST_RATES.palvelumaksu;
+    cost += a * COST_RATES.maanmuokkaus_uudistus;
+    cost += a * COST_RATES.taimet_siementen_uudistus;
+    cost
+}
+
 /// Laskee kulut yhdelle kuviolle
 pub fn calculate_costs(
     area: Option<f64>,
@@ -190,25 +212,9 @@ pub fn calculate_costs(
 ) -> f64 {
     if let Some(a) = area {
         match cutting {
-            Some(Cutting::Ensiharvennus) => {
-                let volume = a * pulpwood * 0.35 + a * sawlog * 0.05;
-                let mut cost = volume * COST_RATES.palvelumaksu;
-                cost += a * COST_RATES.ennakkoraivaus_harvennus;
-                cost
-            }
-            Some(Cutting::Harvennus) => {
-                let volume = a * pulpwood * 0.3 + a * sawlog * 0.1;
-                let mut cost = volume * COST_RATES.palvelumaksu;
-                cost += a * COST_RATES.ennakkoraivaus_harvennus;
-                cost
-            }
-            Some(Cutting::Uudistus) => {
-                let volume = a * pulpwood * 0.75 + a * sawlog * 0.75;
-                let mut cost = volume * COST_RATES.palvelumaksu;
-                cost += a * COST_RATES.maanmuokkaus_uudistus;
-                cost += a * COST_RATES.taimet_siementen_uudistus;
-                cost
-            }
+            Some(Cutting::Ensiharvennus) => ensiharvennus_cost(a, pulpwood, sawlog),
+            Some(Cutting::Harvennus) => harvennus_cost(a, pulpwood, sawlog),
+            Some(Cutting::Uudistus) => uudistus_cost(a, pulpwood, sawlog),
             None => 0.0,
         }
     } else {
@@ -224,7 +230,7 @@ fn ge(value: Option<f64>, threshold: f64) -> bool {
     value.map(|value| value >= threshold).unwrap_or(false)
 }
 
-fn uudistus(species: Species, sawlog: f64, pulpwood: f64, area: f64) -> f64 {
+fn uudistus_value(species: Species, sawlog: f64, pulpwood: f64, area: f64) -> f64 {
     // // -15 % ja 10 % yks. kokonaisvolyymista tukista kuiduksi
     // let adjusted_sawlog = area * sawlog * 0.85 - area * volume * 0.1;
     // let adjusted_pulpwood = area * pulpwood * 0.85 + area * volume * 0.1;
@@ -238,7 +244,7 @@ fn uudistus(species: Species, sawlog: f64, pulpwood: f64, area: f64) -> f64 {
     sawlog_value + pulp_value
 }
 
-fn harvennus(species: Species, sawlog: f64, pulpwood: f64, area: f64) -> f64 {
+fn harvennus_value(species: Species, sawlog: f64, pulpwood: f64, area: f64) -> f64 {
     // area * volume * 0.25 * PRICES.get(species, TimberType::Kuitu, Cutting::Harvennus)
     //     + area * sawlog * 0.15 * PRICES.get(species, TimberType::Tukki, Cutting::Harvennus)
     let sawlog_value =
@@ -248,7 +254,7 @@ fn harvennus(species: Species, sawlog: f64, pulpwood: f64, area: f64) -> f64 {
     sawlog_value + pulp_value
 }
 
-fn ensiharvennus(species: Species, sawlog: f64, pulpwood: f64, area: f64) -> f64 {
+fn ensiharvennus_value(species: Species, sawlog: f64, pulpwood: f64, area: f64) -> f64 {
     let sawlog_value =
         area * sawlog * 0.05 * PRICES.get(species, TimberType::Tukki, Cutting::Ensiharvennus);
 
@@ -357,9 +363,11 @@ pub fn calculate_value(row: &SpeciesSummary) -> f64 {
     let area = row.area.unwrap_or(0.0);
 
     match cutting {
-        Some(Cutting::Ensiharvennus) => return ensiharvennus(species, sawlog, pulpwood, area),
-        Some(Cutting::Harvennus) => return harvennus(species, sawlog, pulpwood, area),
-        Some(Cutting::Uudistus) => return uudistus(species, sawlog, pulpwood, area),
+        Some(Cutting::Ensiharvennus) => {
+            return ensiharvennus_value(species, sawlog, pulpwood, area);
+        }
+        Some(Cutting::Harvennus) => return harvennus_value(species, sawlog, pulpwood, area),
+        Some(Cutting::Uudistus) => return uudistus_value(species, sawlog, pulpwood, area),
         None => {}
     }
 
@@ -371,7 +379,7 @@ pub fn calculate_value(row: &SpeciesSummary) -> f64 {
                 || (ge(age, LIMITS.uudistus.kuusi.age as f64)
                     && ge(diameter, (LIMITS.uudistus.kuusi.diameter - 3) as f64))
             {
-                return uudistus(species, sawlog, pulpwood, area);
+                return uudistus_value(species, sawlog, pulpwood, area);
             }
 
             // Harvennus hintalaskenta
@@ -379,7 +387,7 @@ pub fn calculate_value(row: &SpeciesSummary) -> f64 {
                 && ge(diameter, LIMITS.harvennus.kuusi.diameter as f64)
                 && ge(height, LIMITS.harvennus.kuusi.height as f64)
             {
-                return harvennus(species, sawlog, pulpwood, area);
+                return harvennus_value(species, sawlog, pulpwood, area);
             }
         }
         Species::Manty => {
@@ -388,7 +396,7 @@ pub fn calculate_value(row: &SpeciesSummary) -> f64 {
                 || (ge(age, LIMITS.uudistus.manty.age as f64)
                     && ge(diameter, (LIMITS.uudistus.manty.diameter - 3) as f64))
             {
-                return uudistus(species, sawlog, pulpwood, area);
+                return uudistus_value(species, sawlog, pulpwood, area);
             }
 
             // Harvennus hintalaskenta
@@ -396,7 +404,7 @@ pub fn calculate_value(row: &SpeciesSummary) -> f64 {
                 && ge(diameter, LIMITS.harvennus.manty.diameter as f64)
                 && ge(height, LIMITS.harvennus.manty.height as f64)
             {
-                return harvennus(species, sawlog, pulpwood, area);
+                return harvennus_value(species, sawlog, pulpwood, area);
             }
         }
         Species::Koivu => {
@@ -405,7 +413,7 @@ pub fn calculate_value(row: &SpeciesSummary) -> f64 {
                 || (ge(age, LIMITS.uudistus.koivu.age as f64)
                     && ge(diameter, (LIMITS.uudistus.koivu.diameter - 3) as f64))
             {
-                return uudistus(species, sawlog, pulpwood, area);
+                return uudistus_value(species, sawlog, pulpwood, area);
             }
 
             // Harvennus hintalaskenta
@@ -413,7 +421,7 @@ pub fn calculate_value(row: &SpeciesSummary) -> f64 {
                 && ge(diameter, LIMITS.harvennus.koivu.diameter as f64)
                 && ge(height, LIMITS.harvennus.koivu.height as f64)
             {
-                return harvennus(species, sawlog, pulpwood, area);
+                return harvennus_value(species, sawlog, pulpwood, area);
             }
         }
         Species::Muu => {}
