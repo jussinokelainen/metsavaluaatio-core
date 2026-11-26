@@ -181,6 +181,13 @@ pub fn build_species_summary(
 // Kuviokohtaiset Kulut
 // ---------------------------------------------------------------------------
 
+pub struct CostsData {
+    pub species: Species,
+    pub diameter: Option<f64>,
+    pub age: Option<f64>,
+    pub height: Option<f64>,
+}
+
 fn ensiharvennus_cost(a: f64, pulpwood: f64, sawlog: f64) -> f64 {
     let volume = a * pulpwood * 0.35 + a * sawlog * 0.05;
     let mut cost = volume * COST_RATES.palvelumaksu;
@@ -209,13 +216,73 @@ pub fn calculate_costs(
     sawlog: f64,
     pulpwood: f64,
     cutting: Option<Cutting>,
+    data: &CostsData,
 ) -> f64 {
     if let Some(a) = area {
         match cutting {
             Some(Cutting::Ensiharvennus) => ensiharvennus_cost(a, pulpwood, sawlog),
             Some(Cutting::Harvennus) => harvennus_cost(a, pulpwood, sawlog),
             Some(Cutting::Uudistus) => uudistus_cost(a, pulpwood, sawlog),
-            None => 0.0,
+            None => {
+                // Puuttuva hakkuuehdotus
+                match data.species {
+                    Species::Kuusi => {
+                        // Päätehakkuu hintalaskenta
+                        if ge(data.diameter, LIMITS.uudistus.kuusi.diameter as f64)
+                            || (ge(data.age, LIMITS.uudistus.kuusi.age as f64)
+                                && ge(data.diameter, (LIMITS.uudistus.kuusi.diameter - 3) as f64))
+                        {
+                            return uudistus_cost(a, pulpwood, sawlog);
+                        }
+
+                        // Harvennus hintalaskenta
+                        if ge(data.age, LIMITS.harvennus.kuusi.diameter as f64)
+                            && ge(data.diameter, LIMITS.harvennus.kuusi.diameter as f64)
+                            && ge(data.height, LIMITS.harvennus.kuusi.height as f64)
+                        {
+                            return harvennus_cost(a, pulpwood, sawlog);
+                        }
+                        0.0
+                    }
+                    Species::Manty => {
+                        // Päätehakkuu laskenta
+                        if ge(data.diameter, LIMITS.uudistus.manty.diameter as f64)
+                            || (ge(data.age, LIMITS.uudistus.manty.age as f64)
+                                && ge(data.diameter, (LIMITS.uudistus.manty.diameter - 3) as f64))
+                        {
+                            return uudistus_cost(a, pulpwood, sawlog);
+                        }
+
+                        // Harvennus hintalaskenta
+                        if ge(data.age, LIMITS.harvennus.manty.diameter as f64)
+                            && ge(data.diameter, LIMITS.harvennus.manty.diameter as f64)
+                            && ge(data.height, LIMITS.harvennus.manty.height as f64)
+                        {
+                            return harvennus_cost(a, pulpwood, sawlog);
+                        }
+                        0.0
+                    }
+                    Species::Koivu => {
+                        // Päätehakkuu laskenta
+                        if ge(data.diameter, LIMITS.uudistus.koivu.diameter as f64)
+                            || (ge(data.age, LIMITS.uudistus.koivu.age as f64)
+                                && ge(data.diameter, (LIMITS.uudistus.koivu.diameter - 3) as f64))
+                        {
+                            return uudistus_cost(a, pulpwood, sawlog);
+                        }
+
+                        // Harvennus hintalaskenta
+                        if ge(data.age, LIMITS.harvennus.koivu.diameter as f64)
+                            && ge(data.diameter, LIMITS.harvennus.koivu.diameter as f64)
+                            && ge(data.height, LIMITS.harvennus.koivu.height as f64)
+                        {
+                            return harvennus_cost(a, pulpwood, sawlog);
+                        }
+                        0.0
+                    }
+                    Species::Muu => 0.0,
+                }
+            }
         }
     } else {
         0.0
@@ -513,7 +580,23 @@ pub fn build_stand_values(
             None
         };
 
-        let costs_eur = calculate_costs(area, sawlogvolume, pulpwoodvolume, first.cutting);
+        let main_species = summary.and_then(|summary| summary.main_species);
+        let meanage = summary.and_then(|summary| summary.meanage);
+        let meandiameter = summary.and_then(|summary| summary.meandiameter);
+        let meanheight = summary.and_then(|summary| summary.meanheight);
+
+        let costs_eur = calculate_costs(
+            area,
+            sawlogvolume,
+            pulpwoodvolume,
+            first.cutting,
+            &CostsData {
+                species: Species::from_opt_code(main_species),
+                diameter: meandiameter,
+                age: meanage,
+                height: meanheight,
+            },
+        );
 
         values.push(StandValue {
             standid: first.standid,
@@ -524,13 +607,13 @@ pub fn build_stand_values(
             sawlogvolume,
             pulpwoodvolume,
             volumegrowth,
-            meanage: summary.and_then(|summary| summary.meanage),
+            meanage,
             stemcount: summary.and_then(|summary| summary.stemcount),
-            meandiameter: summary.and_then(|summary| summary.meandiameter),
-            meanheight: summary.and_then(|summary| summary.meanheight),
+            meandiameter,
+            meanheight,
             area,
             growth_pct,
-            main_species: summary.and_then(|summary| summary.main_species),
+            main_species,
             fertility_class: FertilityClass::from_opt_code(
                 summary.and_then(|summary| summary.fertility_class),
             ),
@@ -910,7 +993,18 @@ mod tests {
 
     #[test]
     fn costs_ensiharvennus_gives_correct_value() {
-        let res = calculate_costs(Some(1.0), 16.0, 10.0, Some(Cutting::Ensiharvennus));
+        let res = calculate_costs(
+            Some(1.0),
+            16.0,
+            10.0,
+            Some(Cutting::Ensiharvennus),
+            &CostsData {
+                species: Species::Muu,
+                diameter: Some(0.0),
+                age: Some(0.0),
+                height: Some(0.0),
+            },
+        );
         assert_eq!(res, 398.15)
     }
 
@@ -918,7 +1012,18 @@ mod tests {
     fn costs_harvennus_gives_correct_value() {
         for i in 0..500 {
             let a = i as f64;
-            let res = calculate_costs(Some(a), 1.0 / 0.1, 1.0 / 0.3, Some(Cutting::Harvennus));
+            let res = calculate_costs(
+                Some(a),
+                1.0 / 0.1,
+                1.0 / 0.3,
+                Some(Cutting::Harvennus),
+                &CostsData {
+                    species: Species::Muu,
+                    diameter: Some(0.0),
+                    age: Some(0.0),
+                    height: Some(0.0),
+                },
+            );
             let want = a * 2.0 * COST_RATES.palvelumaksu + a * COST_RATES.ennakkoraivaus_harvennus;
             assert_eq!(res, want)
         }
@@ -928,7 +1033,18 @@ mod tests {
     fn costs_uudistus_gives_correct_value() {
         for i in 0..500 {
             let a = i as f64;
-            let res = calculate_costs(Some(a), 1.0 / 0.75, 1.0 / 0.75, Some(Cutting::Uudistus));
+            let res = calculate_costs(
+                Some(a),
+                1.0 / 0.75,
+                1.0 / 0.75,
+                Some(Cutting::Uudistus),
+                &CostsData {
+                    species: Species::Muu,
+                    diameter: Some(0.0),
+                    age: Some(0.0),
+                    height: Some(0.0),
+                },
+            );
             let want = a * 2.0 * COST_RATES.palvelumaksu
                 + a * COST_RATES.maanmuokkaus_uudistus
                 + a * COST_RATES.taimet_siementen_uudistus;
@@ -937,8 +1053,136 @@ mod tests {
     }
 
     #[test]
-    fn costs_without_a_harvest_proposal_are_zero() {
-        assert_eq!(calculate_costs(Some(1.0), 16.0, 10.0, None), 0.0);
+    fn costs_without_a_harvest_proposal_are_zero_without_species() {
+        assert_eq!(
+            calculate_costs(
+                Some(1.0),
+                16.0,
+                10.0,
+                None,
+                &CostsData {
+                    species: Species::Muu,
+                    diameter: Some(10.0),
+                    age: Some(50.0),
+                    height: Some(8.0)
+                }
+            ),
+            0.0
+        );
+    }
+
+    #[test]
+    fn costs_without_harvest_proposal_evaluated_for_kuusi_uudistus() {
+        assert_eq!(
+            calculate_costs(
+                Some(1.0),
+                16.0,
+                10.0,
+                None,
+                &CostsData {
+                    species: Species::Kuusi,
+                    diameter: Some(30.0),
+                    age: Some(50.0),
+                    height: Some(8.0)
+                }
+            ),
+            1849.75
+        );
+    }
+
+    #[test]
+    fn costs_without_harvest_proposal_evaluated_for_kuusi_harvennus() {
+        assert_eq!(
+            calculate_costs(
+                Some(1.0),
+                16.0,
+                10.0,
+                None,
+                &CostsData {
+                    species: Species::Kuusi,
+                    diameter: Some(13.0),
+                    age: Some(36.0),
+                    height: Some(13.0)
+                }
+            ),
+            398.3
+        );
+    }
+
+    #[test]
+    fn costs_without_harvest_proposal_evaluated_for_manty_uudistus() {
+        assert_eq!(
+            calculate_costs(
+                Some(1.0),
+                16.0,
+                10.0,
+                None,
+                &CostsData {
+                    species: Species::Manty,
+                    diameter: Some(30.0),
+                    age: Some(50.0),
+                    height: Some(8.0)
+                }
+            ),
+            1849.75
+        );
+    }
+
+    #[test]
+    fn costs_without_harvest_proposal_evaluated_for_manty_harvennus() {
+        assert_eq!(
+            calculate_costs(
+                Some(1.0),
+                16.0,
+                10.0,
+                None,
+                &CostsData {
+                    species: Species::Manty,
+                    diameter: Some(12.0),
+                    age: Some(31.0),
+                    height: Some(12.0)
+                }
+            ),
+            398.3
+        );
+    }
+
+    #[test]
+    fn costs_without_harvest_proposal_evaluated_for_koivu_uudistus() {
+        assert_eq!(
+            calculate_costs(
+                Some(1.0),
+                16.0,
+                10.0,
+                None,
+                &CostsData {
+                    species: Species::Koivu,
+                    diameter: Some(30.0),
+                    age: Some(50.0),
+                    height: Some(8.0)
+                }
+            ),
+            1849.75
+        );
+    }
+
+    #[test]
+    fn costs_without_harvest_proposal_evaluated_for_koivu_harvennus() {
+        assert_eq!(
+            calculate_costs(
+                Some(1.0),
+                16.0,
+                10.0,
+                None,
+                &CostsData {
+                    species: Species::Koivu,
+                    diameter: Some(13.0),
+                    age: Some(26.0),
+                    height: Some(14.0)
+                }
+            ),
+            398.3
+        );
     }
 
     /// Yhdistää puuttuvan hakkuuehdotuksen ja annetun ehdotuksen laskemaan

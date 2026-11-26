@@ -72,6 +72,21 @@ impl Species {
             Self::Muu => "Muu",
         }
     }
+
+    /// Metsäkeskuksen `treespecies`-koodi -> puulaji. Tuntematon koodi
+    /// tai None tulkitaan puulajiksi `Muu`.
+    pub fn from_opt_code(code: Option<i64>) -> Self {
+        if let Some(code) = code {
+            match code {
+                1 => Self::Manty,
+                2 => Self::Kuusi,
+                29 => Self::Koivu,
+                _ => Self::Muu,
+            }
+        } else {
+            Self::Muu
+        }
+    }
 }
 
 /// Puutavaralaji.
